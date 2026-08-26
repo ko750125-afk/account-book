@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 import type { Expense, NewExpense } from "@/lib/types";
 
 function isExpense(value: unknown): value is Expense {
@@ -17,7 +17,7 @@ function isExpense(value: unknown): value is Expense {
 }
 
 export async function fetchExpenses(): Promise<Expense[]> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from("expenses")
     .select("id, created_at, date, amount, description")
     .order("created_at", { ascending: false })
@@ -31,7 +31,7 @@ export async function fetchExpenses(): Promise<Expense[]> {
 }
 
 export async function createExpense(expense: NewExpense): Promise<Expense> {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from("expenses")
     .insert(expense)
     .select("id, created_at, date, amount, description")
