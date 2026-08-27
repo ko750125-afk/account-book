@@ -41,3 +41,7 @@ export function getKstDateContext(): KstDateContext {
     lastWeekEnd: addKstDays(thisMonday, -1),
   };
 }
+
+export function currentMonthKey(): string {
+  return todayKstDate().slice(0, 7);
+}

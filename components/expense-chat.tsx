@@ -10,15 +10,29 @@ import {
   useState,
 } from "react";
 import { ReceiptCamera } from "@/components/receipt-camera";
+import { MonthBudget } from "@/components/month-budget";
 import { useSpeechToText } from "@/hooks/use-speech-to-text";
+import {
+  budgetAlertMessage,
+  fetchMonthBudget,
+  getBudgetAlert,
+  monthSpent,
+  saveMonthBudget,
+} from "@/lib/budgets";
 import { prefersNativeCameraCapture } from "@/lib/camera";
 import { compressReceiptImage } from "@/lib/compress-image";
+import { currentMonthKey } from "@/lib/date-kst";
 import { fetchExpenses } from "@/lib/expenses";
 import { isAllowedReceiptType } from "@/lib/receipt-types";
 import type { ChatMessage, Expense } from "@/lib/types";
 
 function formatAmount(value: number): string {
   return new Intl.NumberFormat("ko-KR").format(value);
+}
+
+function formatMonthLabel(month: string): string {
+  const [, monthPart] = month.split("-");
+  return `${Number(monthPart)}월`;
 }
 
 function formatDateLabel(isoDate: string): string {
@@ -56,11 +70,15 @@ export function ExpenseChat() {
   const [sendingLabel, setSendingLabel] = useState("입력 중...");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [budget, setBudget] = useState<number | null>(null);
   const [error, setError] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const sendMessageRef = useRef<(text: string) => void>(() => {});
+  const budgetRef = useRef<number | null>(null);
+  const monthKey = currentMonthKey();
+  budgetRef.current = budget;
 
   const { isListening, toggle: toggleSpeech } = useSpeechToText({
     enabled: !isSending,
@@ -81,9 +99,13 @@ export function ExpenseChat() {
 
     async function loadExpenses() {
       try {
-        const rows = await fetchExpenses();
+        const [rows, monthBudget] = await Promise.all([
+          fetchExpenses(),
+          fetchMonthBudget(currentMonthKey()),
+        ]);
         if (!cancelled) {
           setExpenses(rows);
+          setBudget(monthBudget);
         }
       } catch {
         if (!cancelled) {
@@ -111,6 +133,27 @@ export function ExpenseChat() {
     () => expenses.reduce((sum, expense) => sum + expense.amount, 0),
     [expenses],
   );
+
+  const spentThisMonth = useMemo(
+    () => monthSpent(expenses, monthKey),
+    [expenses, monthKey],
+  );
+
+  function applySavedExpense(saved: Expense) {
+    const nextExpenses = [saved, ...expenses.filter((item) => item.id !== saved.id)];
+    const currentBudget = budgetRef.current;
+    const previousAlert = getBudgetAlert(monthSpent(expenses, monthKey), currentBudget);
+    const nextAlert = getBudgetAlert(monthSpent(nextExpenses, monthKey), currentBudget);
+    const percent = currentBudget
+      ? Math.round((monthSpent(nextExpenses, monthKey) / currentBudget) * 100)
+      : 0;
+    const warning = budgetAlertMessage(nextAlert, percent);
+
+    setExpenses(nextExpenses);
+    if (warning && nextAlert !== previousAlert) {
+      setMessages((current) => [...current, createMessage("assistant", warning)]);
+    }
+  }
 
   async function sendMessage(text: string) {
     const trimmed = text.trim();
@@ -171,8 +214,7 @@ export function ExpenseChat() {
       ]);
 
       if (data.expense && typeof data.expense === "object") {
-        const saved = data.expense;
-        setExpenses((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
+        applySavedExpense(data.expense);
       }
     } catch (error) {
       const notice =
@@ -265,8 +307,7 @@ export function ExpenseChat() {
       ]);
 
       if (data.expense && typeof data.expense === "object") {
-        const saved = data.expense;
-        setExpenses((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
+        applySavedExpense(data.expense);
       }
     } catch (error) {
       const notice =
@@ -345,7 +386,16 @@ export function ExpenseChat() {
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <section className="max-h-[34%] shrink-0 overflow-y-auto border-b border-[#d7e0e8] bg-white/80 px-4 py-3">
+      <section className="max-h-[42%] shrink-0 overflow-y-auto border-b border-[#d7e0e8] bg-white/80 px-4 py-3">
+        <MonthBudget
+          monthLabel={formatMonthLabel(monthKey)}
+          spent={spentThisMonth}
+          budget={budget}
+          onSave={async (amount) => {
+            await saveMonthBudget(monthKey, amount);
+            setBudget(amount);
+          }}
+        />
         <div className="mb-2 flex items-end justify-between gap-3">
           <h2 className="text-[13px] font-semibold text-[#3c4a57]">저장된 지출</h2>
           <p className="flex items-baseline gap-0.5 text-[#e45b4c]">
