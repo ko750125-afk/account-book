@@ -9,7 +9,9 @@ import {
   useRef,
   useState,
 } from "react";
+import { ReceiptCamera } from "@/components/receipt-camera";
 import { useSpeechToText } from "@/hooks/use-speech-to-text";
+import { prefersNativeCameraCapture } from "@/lib/camera";
 import { compressReceiptImage } from "@/lib/compress-image";
 import { fetchExpenses } from "@/lib/expenses";
 import { isAllowedReceiptType } from "@/lib/receipt-types";
@@ -52,9 +54,12 @@ export function ExpenseChat() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [sendingLabel, setSendingLabel] = useState("입력 중...");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [error, setError] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const sendMessageRef = useRef<(text: string) => void>(() => {});
 
   const { isListening, toggle: toggleSpeech } = useSpeechToText({
@@ -275,6 +280,9 @@ export function ExpenseChat() {
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
+      if (cameraInputRef.current) {
+        cameraInputRef.current.value = "";
+      }
     }
   }
 
@@ -305,7 +313,26 @@ export function ExpenseChat() {
     if (isSending || isListening) {
       return;
     }
+    setPickerOpen(true);
+  }
+
+  function handlePickAlbum() {
+    setPickerOpen(false);
     fileInputRef.current?.click();
+  }
+
+  function handlePickCamera() {
+    setPickerOpen(false);
+    if (prefersNativeCameraCapture()) {
+      cameraInputRef.current?.click();
+      return;
+    }
+    setCameraOpen(true);
+  }
+
+  function handleCameraCapture(file: File) {
+    setCameraOpen(false);
+    void sendReceipt(file);
   }
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -317,7 +344,7 @@ export function ExpenseChat() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col">
       <section className="max-h-[34%] shrink-0 overflow-y-auto border-b border-[#d7e0e8] bg-white/80 px-4 py-3">
         <div className="mb-2 flex items-end justify-between gap-3">
           <h2 className="text-[13px] font-semibold text-[#3c4a57]">저장된 지출</h2>
@@ -426,7 +453,15 @@ export function ExpenseChat() {
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif"
+          accept="image/*"
+          className="sr-only"
+          onChange={handleFileChange}
+        />
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
           className="sr-only"
           onChange={handleFileChange}
         />
@@ -500,6 +535,52 @@ export function ExpenseChat() {
           </button>
         </div>
       </form>
+
+      {pickerOpen ? (
+        <div
+          className="absolute inset-0 z-30 flex items-end bg-black/40"
+          role="presentation"
+          onClick={() => setPickerOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-label="영수증 사진 선택"
+            className="w-full rounded-t-2xl bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={handlePickCamera}
+              className="flex h-14 w-full items-center justify-center text-[17px] font-medium text-[#191919] touch-manipulation"
+            >
+              카메라로 촬영
+            </button>
+            <div className="h-px bg-[#eee]" />
+            <button
+              type="button"
+              onClick={handlePickAlbum}
+              className="flex h-14 w-full items-center justify-center text-[17px] font-medium text-[#191919] touch-manipulation"
+            >
+              앨범에서 선택
+            </button>
+            <div className="h-px bg-[#eee]" />
+            <button
+              type="button"
+              onClick={() => setPickerOpen(false)}
+              className="flex h-14 w-full items-center justify-center text-[17px] font-medium text-[#8a97a3] touch-manipulation"
+            >
+              취소
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {cameraOpen ? (
+        <ReceiptCamera
+          onCapture={handleCameraCapture}
+          onClose={() => setCameraOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
