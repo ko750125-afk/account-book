@@ -47,3 +47,33 @@ export async function createExpense(expense: NewExpense): Promise<Expense> {
 
   return data;
 }
+
+export async function updateExpense(
+  id: number,
+  expense: NewExpense,
+): Promise<Expense> {
+  const { data, error } = await getSupabase()
+    .from("expenses")
+    .update(expense)
+    .eq("id", id)
+    .select("id, created_at, date, amount, description")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!isExpense(data)) {
+    throw new Error("수정된 지출 데이터 형식이 올바르지 않습니다.");
+  }
+
+  return data;
+}
+
+export async function deleteExpense(id: number): Promise<void> {
+  const { error } = await getSupabase().from("expenses").delete().eq("id", id);
+
+  if (error) {
+    throw error;
+  }
+}
