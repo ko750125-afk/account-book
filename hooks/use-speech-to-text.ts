@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  acquireMicrophoneStream,
   createSpeechRecognition,
   isSpeechRecognitionSupported,
+  releaseMicrophoneStream,
   speechErrorMessage,
   type SpeechRecognitionLike,
 } from "@/lib/speech";
@@ -25,6 +27,7 @@ export function useSpeechToText({
   const [isSupported, setIsSupported] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const finalTextRef = useRef("");
+  const startingRef = useRef(false);
   const onFinalRef = useRef(onFinal);
   const onInterimRef = useRef(onInterim);
   const onErrorRef = useRef(onError);
@@ -39,30 +42,23 @@ export function useSpeechToText({
     return () => {
       recognitionRef.current?.abort();
       recognitionRef.current = null;
+      releaseMicrophoneStream();
     };
   }, []);
 
-  function stop() {
-    recognitionRef.current?.stop();
-  }
-
-  function start() {
-    if (!enabled || isListening) {
-      return;
+  function getRecognition(): SpeechRecognitionLike | null {
+    if (recognitionRef.current) {
+      return recognitionRef.current;
     }
 
     const recognition = createSpeechRecognition();
     if (!recognition) {
-      onErrorRef.current?.(
-        "이 브라우저는 음성 인식을 지원하지 않아요. Chrome에서 이용해 주세요.",
-      );
-      return;
+      return null;
     }
 
     recognition.lang = "ko-KR";
     recognition.continuous = false;
     recognition.interimResults = true;
-    finalTextRef.current = "";
 
     recognition.onresult = (event) => {
       let interim = "";
@@ -94,19 +90,51 @@ export function useSpeechToText({
 
     recognition.onend = () => {
       setIsListening(false);
-      recognitionRef.current = null;
       const text = finalTextRef.current.trim();
       if (text) {
         onFinalRef.current(text);
       }
     };
 
+    recognitionRef.current = recognition;
+    return recognition;
+  }
+
+  function stop() {
+    recognitionRef.current?.stop();
+  }
+
+  async function start() {
+    if (!enabled || isListening || startingRef.current) {
+      return;
+    }
+
+    const recognition = getRecognition();
+    if (!recognition) {
+      onErrorRef.current?.(
+        "이 브라우저는 음성 인식을 지원하지 않아요. Chrome에서 이용해 주세요.",
+      );
+      return;
+    }
+
+    startingRef.current = true;
+    finalTextRef.current = "";
+
     try {
+      await acquireMicrophoneStream();
       recognition.start();
-      recognitionRef.current = recognition;
       setIsListening(true);
-    } catch {
+    } catch (error) {
+      const name = error instanceof DOMException ? error.name : "";
+      if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+        onErrorRef.current?.(
+          "마이크 권한이 필요해요. 주소창 왼쪽 아이콘에서 마이크를 항상 허용해 주세요.",
+        );
+        return;
+      }
       onErrorRef.current?.("음성 인식을 시작하지 못했어요. 다시 시도해 주세요.");
+    } finally {
+      startingRef.current = false;
     }
   }
 
@@ -115,7 +143,7 @@ export function useSpeechToText({
       stop();
       return;
     }
-    start();
+    void start();
   }
 
   return { isListening, isSupported, start, stop, toggle };
