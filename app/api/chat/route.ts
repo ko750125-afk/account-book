@@ -1,18 +1,17 @@
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { classifyChatIntent } from "@/lib/chat-intent";
 import { getKstDateContext } from "@/lib/date-kst";
+import {
+  formatSavedReply,
+  parseExpense,
+  parseModelJson,
+} from "@/lib/expense-parse";
 import { createExpense, fetchExpenses } from "@/lib/expenses";
-import type { ChatMessage, Expense, NewExpense } from "@/lib/types";
+import type { ChatMessage, Expense } from "@/lib/types";
 
 interface ChatRequestBody {
   message?: unknown;
   history?: unknown;
-}
-
-function formatSavedReply(expense: NewExpense): string {
-  const [, month, day] = expense.date.split("-");
-  const amount = new Intl.NumberFormat("ko-KR").format(expense.amount);
-  return `${Number(month)}월 ${Number(day)}일 ${expense.description} ${amount}원을 저장했어요!`;
 }
 
 function isChatHistory(
@@ -46,54 +45,6 @@ function toGeminiHistory(
     role: item.role === "assistant" ? "model" : "user",
     parts: [{ text: item.text }],
   }));
-}
-
-function parseModelJson(text: string): { reply: string; expense: NewExpense | null } {
-  const trimmed = text
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/\s*```$/, "")
-    .trim();
-
-  const parsed: unknown = JSON.parse(trimmed);
-  if (typeof parsed !== "object" || parsed === null) {
-    throw new Error("모델 응답 형식이 올바르지 않습니다.");
-  }
-
-  const row = parsed as Record<string, unknown>;
-  const reply = typeof row.reply === "string" ? row.reply.trim() : "";
-
-  return {
-    reply,
-    expense: parseExpense(row.expense),
-  };
-}
-
-function parseExpense(value: unknown): NewExpense | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (typeof value !== "object") {
-    return null;
-  }
-
-  const row = value as Record<string, unknown>;
-  const date = typeof row.date === "string" ? row.date.trim() : "";
-  const description =
-    typeof row.description === "string" ? row.description.trim() : "";
-  const amount = typeof row.amount === "number" ? row.amount : Number(row.amount);
-
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return null;
-  }
-  if (!Number.isInteger(amount) || amount <= 0) {
-    return null;
-  }
-  if (!description) {
-    return null;
-  }
-
-  return { date, amount, description };
 }
 
 function toAnalysisRows(expenses: Expense[]): {
@@ -157,8 +108,9 @@ async function handleExpenseInput(
   });
   const result = await chat.sendMessage(message);
   const parsed = parseModelJson(result.response.text());
+  const extracted = parseExpense(parsed.expense);
 
-  if (!parsed.expense) {
+  if (!extracted) {
     return Response.json({
       reply:
         parsed.reply ||
@@ -167,10 +119,10 @@ async function handleExpenseInput(
     });
   }
 
-  const expense = await createExpense(parsed.expense);
+  const expense = await createExpense(extracted);
 
   return Response.json({
-    reply: formatSavedReply(parsed.expense),
+    reply: formatSavedReply(extracted),
     expense,
   });
 }

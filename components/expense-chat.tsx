@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ChangeEvent,
   FormEvent,
   KeyboardEvent,
   useEffect,
@@ -9,7 +10,9 @@ import {
   useState,
 } from "react";
 import { useSpeechToText } from "@/hooks/use-speech-to-text";
+import { compressReceiptImage } from "@/lib/compress-image";
 import { fetchExpenses } from "@/lib/expenses";
+import { isAllowedReceiptType } from "@/lib/receipt-types";
 import type { ChatMessage, Expense } from "@/lib/types";
 
 function formatAmount(value: number): string {
@@ -24,11 +27,16 @@ function formatDateLabel(isoDate: string): string {
   return `${year}.${month}.${day}`;
 }
 
-function createMessage(role: ChatMessage["role"], text: string): ChatMessage {
+function createMessage(
+  role: ChatMessage["role"],
+  text: string,
+  imageUrl?: string,
+): ChatMessage {
   return {
     id: `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     role,
     text,
+    imageUrl,
   };
 }
 
@@ -37,14 +45,16 @@ export function ExpenseChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     createMessage(
       "assistant",
-      "안녕하세요. 오늘 쓴 돈을 말씀해 주세요.\n예: 점심 8,000원\n이번 달 얼마 썼는지 같은 질문도 가능해요.",
+      "안녕하세요. 오늘 쓴 돈을 말씀해 주세요.\n예: 점심 8,000원\n영수증 사진을 올려도 자동으로 기록해요.",
     ),
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
+  const [sendingLabel, setSendingLabel] = useState("입력 중...");
   const [error, setError] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const sendMessageRef = useRef<(text: string) => void>(() => {});
 
   const { isListening, toggle: toggleSpeech } = useSpeechToText({
@@ -107,6 +117,7 @@ export function ExpenseChat() {
     setMessages((current) => [...current, userMessage]);
     setInput("");
     setError("");
+    setSendingLabel("입력 중...");
     setIsSending(true);
 
     try {
@@ -170,6 +181,103 @@ export function ExpenseChat() {
     }
   }
 
+  async function sendReceipt(file: File) {
+    if (isSending || isListening) {
+      return;
+    }
+
+    if (file.type && !isAllowedReceiptType(file.type)) {
+      setError("JPEG, PNG, WEBP 형식의 사진만 올릴 수 있어요.");
+      return;
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+      setError("사진이 너무 커요. 더 작은 이미지로 올려 주세요.");
+      return;
+    }
+
+    setError("");
+    setSendingLabel("영수증을 읽고 있어요...");
+    setIsSending(true);
+
+    try {
+      let imageBlob: Blob;
+      try {
+        imageBlob = await compressReceiptImage(file);
+      } catch {
+        imageBlob = file;
+      }
+
+      const previewUrl = URL.createObjectURL(imageBlob);
+      setMessages((current) => [
+        ...current,
+        createMessage("user", "영수증을 올렸어요", previewUrl),
+      ]);
+
+      const body = new FormData();
+      body.append(
+        "image",
+        new File([imageBlob], "receipt.jpg", {
+          type: imageBlob.type || "image/jpeg",
+        }),
+      );
+
+      const response = await fetch("/api/receipt", {
+        method: "POST",
+        body,
+      });
+
+      const payload: unknown = await response.json();
+      if (typeof payload !== "object" || payload === null) {
+        throw new Error("영수증을 읽지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      }
+
+      const data = payload as {
+        reply?: unknown;
+        expense?: Expense | null;
+        error?: unknown;
+      };
+
+      if (!response.ok) {
+        throw new Error(
+          typeof data.error === "string"
+            ? data.error
+            : "영수증을 읽지 못했습니다. 잠시 후 다시 시도해 주세요.",
+        );
+      }
+
+      if (typeof data.reply !== "string") {
+        throw new Error(
+          typeof data.error === "string"
+            ? data.error
+            : "영수증을 읽지 못했습니다. 잠시 후 다시 시도해 주세요.",
+        );
+      }
+
+      setMessages((current) => [
+        ...current,
+        createMessage("assistant", data.reply as string),
+      ]);
+
+      if (data.expense && typeof data.expense === "object") {
+        const saved = data.expense;
+        setExpenses((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
+      }
+    } catch (error) {
+      const notice =
+        error instanceof Error
+          ? error.message
+          : "영수증을 올리지 못했습니다. 잠시 후 다시 시도해 주세요.";
+      setError(notice);
+      setMessages((current) => [...current, createMessage("assistant", notice)]);
+    } finally {
+      setIsSending(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  }
+
   sendMessageRef.current = (text) => {
     void sendMessage(text);
   };
@@ -191,6 +299,21 @@ export function ExpenseChat() {
       event.preventDefault();
       void sendMessage(input);
     }
+  }
+
+  function handleImageClick() {
+    if (isSending || isListening) {
+      return;
+    }
+    fileInputRef.current?.click();
+  }
+
+  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    void sendReceipt(file);
   }
 
   return (
@@ -250,21 +373,38 @@ export function ExpenseChat() {
                   : "flex justify-start"
               }
             >
-              <p
-                className={
-                  message.role === "user"
-                    ? "max-w-[78%] whitespace-pre-wrap rounded-[18px] rounded-tr-md bg-[#fee500] px-3.5 py-2.5 text-[16px] leading-6 text-[#191919]"
-                    : "max-w-[78%] whitespace-pre-wrap rounded-[18px] rounded-tl-md bg-white px-3.5 py-2.5 text-[16px] leading-6 text-[#191919] shadow-[0_1px_1px_rgba(0,0,0,0.04)]"
-                }
-              >
-                {message.text}
-              </p>
+              {message.imageUrl ? (
+                <div
+                  className={
+                    message.role === "user"
+                      ? "max-w-[78%] overflow-hidden rounded-[18px] rounded-tr-md bg-[#fee500] text-[16px] leading-6 text-[#191919]"
+                      : "max-w-[78%] overflow-hidden rounded-[18px] rounded-tl-md bg-white text-[16px] leading-6 text-[#191919] shadow-[0_1px_1px_rgba(0,0,0,0.04)]"
+                  }
+                >
+                  <img
+                    src={message.imageUrl}
+                    alt="올린 영수증"
+                    className="max-h-44 w-full object-cover"
+                  />
+                  <p className="px-3.5 py-2.5">{message.text}</p>
+                </div>
+              ) : (
+                <p
+                  className={
+                    message.role === "user"
+                      ? "max-w-[78%] whitespace-pre-wrap rounded-[18px] rounded-tr-md bg-[#fee500] px-3.5 py-2.5 text-[16px] leading-6 text-[#191919]"
+                      : "max-w-[78%] whitespace-pre-wrap rounded-[18px] rounded-tl-md bg-white px-3.5 py-2.5 text-[16px] leading-6 text-[#191919] shadow-[0_1px_1px_rgba(0,0,0,0.04)]"
+                  }
+                >
+                  {message.text}
+                </p>
+              )}
             </li>
           ))}
           {isSending ? (
             <li className="flex justify-start">
               <p className="rounded-[18px] rounded-tl-md bg-white px-3.5 py-2.5 text-[15px] text-[#8a97a3]">
-                입력 중...
+                {sendingLabel}
               </p>
             </li>
           ) : null}
@@ -283,12 +423,41 @@ export function ExpenseChat() {
             {error}
           </p>
         ) : null}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif"
+          className="sr-only"
+          onChange={handleFileChange}
+        />
         <div className="flex items-end gap-2">
+          <button
+            type="button"
+            onClick={handleImageClick}
+            disabled={isSending || isListening}
+            aria-label="영수증 사진 올리기"
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-[#191919] shadow-[0_1px_1px_rgba(0,0,0,0.06)] transition-colors touch-manipulation hover:bg-[#f2f2f2] disabled:bg-[#e5e5e5] disabled:text-[#b0b8c1]"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect x="3" y="5" width="18" height="14" rx="2" />
+              <circle cx="8.5" cy="10" r="1.5" fill="currentColor" stroke="none" />
+              <path d="m21 15-4.5-4.5L9 18" />
+            </svg>
+          </button>
           <textarea
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={isListening ? "말씀해 주세요" : "메시지 입력 또는 마이크"}
+            placeholder={isListening ? "말씀해 주세요" : "메시지, 마이크 또는 영수증"}
             rows={1}
             disabled={isSending || isListening}
             className="max-h-28 min-h-12 flex-1 resize-none rounded-[22px] bg-white px-4 py-3 text-[16px] leading-5 text-[#222] outline-none placeholder:text-[#b0b8c1] focus-visible:ring-2 focus-visible:ring-[#fee500]/80"
