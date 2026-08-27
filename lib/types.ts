@@ -7,3 +7,11 @@ export interface Expense {
 }
 
 export type NewExpense = Pick<Expense, "date" | "amount" | "description">;
+
+export type ChatRole = "user" | "assistant";
+
+export interface ChatMessage {
+  id: string;
+  role: ChatRole;
+  text: string;
+}
