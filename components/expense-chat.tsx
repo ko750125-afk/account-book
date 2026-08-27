@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useSpeechToText } from "@/hooks/use-speech-to-text";
 import { fetchExpenses } from "@/lib/expenses";
 import type { ChatMessage, Expense } from "@/lib/types";
 
@@ -44,6 +45,21 @@ export function ExpenseChat() {
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const sendMessageRef = useRef<(text: string) => void>(() => {});
+
+  const { isListening, toggle: toggleSpeech } = useSpeechToText({
+    enabled: !isSending,
+    onInterim: (text) => {
+      setInput(text);
+      setError("");
+    },
+    onFinal: (text) => {
+      sendMessageRef.current(text);
+    },
+    onError: (message) => {
+      setError(message);
+    },
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -154,6 +170,17 @@ export function ExpenseChat() {
     }
   }
 
+  sendMessageRef.current = (text) => {
+    void sendMessage(text);
+  };
+
+  function handleMicClick() {
+    if (isSending) {
+      return;
+    }
+    toggleSpeech();
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void sendMessage(input);
@@ -249,7 +276,9 @@ export function ExpenseChat() {
         onSubmit={handleSubmit}
         className="shrink-0 border-t border-[#d7e0e8] bg-[#f7f8fa] px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
       >
-        {error ? (
+        {isListening ? (
+          <p className="mb-2 px-1 text-[13px] text-[#3c4a57]">듣고 있어요...</p>
+        ) : error ? (
           <p className="mb-2 px-1 text-[13px] text-[#e45b4c]" role="alert">
             {error}
           </p>
@@ -259,14 +288,35 @@ export function ExpenseChat() {
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="메시지를 입력하세요"
+            placeholder={isListening ? "말씀해 주세요" : "메시지 입력 또는 마이크"}
             rows={1}
-            disabled={isSending}
+            disabled={isSending || isListening}
             className="max-h-28 min-h-12 flex-1 resize-none rounded-[22px] bg-white px-4 py-3 text-[16px] leading-5 text-[#222] outline-none placeholder:text-[#b0b8c1] focus-visible:ring-2 focus-visible:ring-[#fee500]/80"
           />
           <button
+            type="button"
+            onClick={handleMicClick}
+            disabled={isSending}
+            aria-label={isListening ? "음성 입력 중지" : "음성 입력"}
+            aria-pressed={isListening}
+            className={
+              isListening
+                ? "flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#e45b4c] text-white animate-pulse touch-manipulation"
+                : "flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-[#191919] shadow-[0_1px_1px_rgba(0,0,0,0.06)] transition-colors touch-manipulation hover:bg-[#f2f2f2] disabled:bg-[#e5e5e5] disabled:text-[#b0b8c1]"
+            }
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              className="h-5 w-5"
+              fill="currentColor"
+            >
+              <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z" />
+            </svg>
+          </button>
+          <button
             type="submit"
-            disabled={isSending || !input.trim()}
+            disabled={isSending || isListening || !input.trim()}
             aria-label="전송"
             className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#fee500] text-[#191919] transition-colors touch-manipulation hover:bg-[#f5dc00] disabled:bg-[#e5e5e5] disabled:text-[#b0b8c1]"
           >
