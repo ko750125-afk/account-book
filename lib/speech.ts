@@ -68,36 +68,35 @@ export function speechErrorMessage(error: string): string {
   return "음성 인식에 실패했어요. 다시 시도해 주세요.";
 }
 
-let sharedMicrophoneStream: MediaStream | null = null;
+let microphoneUnlocked = false;
 
-function isStreamLive(stream: MediaStream | null): stream is MediaStream {
-  return Boolean(
-    stream?.active && stream.getAudioTracks().some((track) => track.readyState === "live"),
-  );
-}
+export async function unlockMicrophonePermission(): Promise<void> {
+  if (microphoneUnlocked) {
+    return;
+  }
 
-export async function acquireMicrophoneStream(): Promise<MediaStream> {
-  if (isStreamLive(sharedMicrophoneStream)) {
-    return sharedMicrophoneStream;
+  try {
+    const status = await navigator.permissions.query({
+      name: "microphone" as PermissionName,
+    });
+    if (status.state === "granted") {
+      microphoneUnlocked = true;
+      return;
+    }
+  } catch {
+    // Safari 등은 microphone permission query를 지원하지 않습니다.
   }
 
   if (!navigator.mediaDevices?.getUserMedia) {
-    throw new Error("이 브라우저는 마이크를 지원하지 않아요. Chrome에서 이용해 주세요.");
+    return;
   }
 
-  sharedMicrophoneStream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      echoCancellation: true,
-      noiseSuppression: true,
-    },
-  });
-
-  return sharedMicrophoneStream;
-}
-
-export function releaseMicrophoneStream(): void {
-  sharedMicrophoneStream?.getTracks().forEach((track) => {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  stream.getTracks().forEach((track) => {
     track.stop();
   });
-  sharedMicrophoneStream = null;
+  microphoneUnlocked = true;
+  await new Promise((resolve) => {
+    window.setTimeout(resolve, 80);
+  });
 }

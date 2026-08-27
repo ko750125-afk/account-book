@@ -2,11 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  acquireMicrophoneStream,
   createSpeechRecognition,
   isSpeechRecognitionSupported,
-  releaseMicrophoneStream,
   speechErrorMessage,
+  unlockMicrophonePermission,
   type SpeechRecognitionLike,
 } from "@/lib/speech";
 
@@ -28,6 +27,7 @@ export function useSpeechToText({
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const finalTextRef = useRef("");
   const startingRef = useRef(false);
+  const stoppedByUserRef = useRef(false);
   const onFinalRef = useRef(onFinal);
   const onInterimRef = useRef(onInterim);
   const onErrorRef = useRef(onError);
@@ -42,22 +42,33 @@ export function useSpeechToText({
     return () => {
       recognitionRef.current?.abort();
       recognitionRef.current = null;
-      releaseMicrophoneStream();
     };
   }, []);
 
-  function getRecognition(): SpeechRecognitionLike | null {
-    if (recognitionRef.current) {
-      return recognitionRef.current;
+  function stop() {
+    stoppedByUserRef.current = true;
+    recognitionRef.current?.stop();
+  }
+
+  async function start() {
+    if (!enabled || isListening || startingRef.current) {
+      return;
     }
 
     const recognition = createSpeechRecognition();
     if (!recognition) {
-      return null;
+      onErrorRef.current?.(
+        "이 브라우저는 음성 인식을 지원하지 않아요. Chrome에서 이용해 주세요.",
+      );
+      return;
     }
 
+    startingRef.current = true;
+    stoppedByUserRef.current = false;
+    finalTextRef.current = "";
+
     recognition.lang = "ko-KR";
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = true;
 
     recognition.onresult = (event) => {
@@ -79,10 +90,17 @@ export function useSpeechToText({
       if (liveText) {
         onInterimRef.current?.(liveText);
       }
+
+      if (finalTextRef.current) {
+        recognition.stop();
+      }
     };
 
     recognition.onerror = (event) => {
       if (event.error === "aborted") {
+        return;
+      }
+      if (event.error === "no-speech") {
         return;
       }
       onErrorRef.current?.(speechErrorMessage(event.error));
@@ -90,41 +108,24 @@ export function useSpeechToText({
 
     recognition.onend = () => {
       setIsListening(false);
+      recognitionRef.current = null;
       const text = finalTextRef.current.trim();
       if (text) {
         onFinalRef.current(text);
+        return;
+      }
+      if (!stoppedByUserRef.current) {
+        onErrorRef.current?.("음성을 듣지 못했어요. 다시 눌러 말씀해 주세요.");
       }
     };
 
-    recognitionRef.current = recognition;
-    return recognition;
-  }
-
-  function stop() {
-    recognitionRef.current?.stop();
-  }
-
-  async function start() {
-    if (!enabled || isListening || startingRef.current) {
-      return;
-    }
-
-    const recognition = getRecognition();
-    if (!recognition) {
-      onErrorRef.current?.(
-        "이 브라우저는 음성 인식을 지원하지 않아요. Chrome에서 이용해 주세요.",
-      );
-      return;
-    }
-
-    startingRef.current = true;
-    finalTextRef.current = "";
-
     try {
-      await acquireMicrophoneStream();
+      await unlockMicrophonePermission();
+      recognitionRef.current = recognition;
       recognition.start();
       setIsListening(true);
     } catch (error) {
+      recognitionRef.current = null;
       const name = error instanceof DOMException ? error.name : "";
       if (name === "NotAllowedError" || name === "PermissionDeniedError") {
         onErrorRef.current?.(
