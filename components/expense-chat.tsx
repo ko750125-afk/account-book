@@ -9,8 +9,9 @@ import {
   useRef,
   useState,
 } from "react";
-import { ReceiptCamera } from "@/components/receipt-camera";
+import { ExpenseCharts } from "@/components/expense-charts";
 import { MonthBudget } from "@/components/month-budget";
+import { ReceiptCamera } from "@/components/receipt-camera";
 import { useSpeechToText } from "@/hooks/use-speech-to-text";
 import {
   budgetAlertMessage,
@@ -71,6 +72,7 @@ export function ExpenseChat() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [budget, setBudget] = useState<number | null>(null);
+  const [panel, setPanel] = useState<"list" | "chart">("list");
   const [error, setError] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -386,7 +388,7 @@ export function ExpenseChat() {
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <section className="max-h-[42%] shrink-0 overflow-y-auto border-b border-[#d7e0e8] bg-white/80 px-4 py-3">
+      <section className="max-h-[50%] shrink-0 overflow-y-auto border-b border-[#d7e0e8] bg-white/80 px-4 py-3">
         <MonthBudget
           monthLabel={formatMonthLabel(monthKey)}
           spent={spentThisMonth}
@@ -397,7 +399,30 @@ export function ExpenseChat() {
           }}
         />
         <div className="mb-2 flex items-end justify-between gap-3">
-          <h2 className="text-[13px] font-semibold text-[#3c4a57]">저장된 지출</h2>
+          <div className="flex items-center gap-1 rounded-lg bg-[#eef2f6] p-0.5">
+            <button
+              type="button"
+              onClick={() => setPanel("list")}
+              className={
+                panel === "list"
+                  ? "h-7 rounded-md bg-white px-2.5 text-[12px] font-semibold text-[#222] shadow-sm"
+                  : "h-7 rounded-md px-2.5 text-[12px] font-medium text-[#8a97a3]"
+              }
+            >
+              목록
+            </button>
+            <button
+              type="button"
+              onClick={() => setPanel("chart")}
+              className={
+                panel === "chart"
+                  ? "h-7 rounded-md bg-white px-2.5 text-[12px] font-semibold text-[#222] shadow-sm"
+                  : "h-7 rounded-md px-2.5 text-[12px] font-medium text-[#8a97a3]"
+              }
+            >
+              차트
+            </button>
+          </div>
           <p className="flex items-baseline gap-0.5 text-[#e45b4c]">
             <span className="amount text-lg font-semibold leading-none">
               {formatAmount(totalAmount)}
@@ -412,6 +437,8 @@ export function ExpenseChat() {
           <p className="py-4 text-center text-[14px] text-[#8a97a3]">
             아직 기록된 지출이 없습니다.
           </p>
+        ) : panel === "chart" ? (
+          <ExpenseCharts expenses={expenses} />
         ) : (
           <ul className="flex flex-col gap-2">
             {expenses.map((expense) => (
