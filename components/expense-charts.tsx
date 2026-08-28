@@ -11,8 +11,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { toCategoryTotals, toMonthlyTotals } from "@/lib/expense-stats";
 import { CATEGORY_COLORS, isExpenseCategory } from "@/lib/categories";
+import { toCategoryTotals, toMonthlyTotals } from "@/lib/expense-stats";
+import { formatAmount } from "@/lib/format";
 import type { Expense } from "@/lib/types";
 
 const PIE_COLORS = [
@@ -34,10 +35,6 @@ function pieColor(name: string, index: number): string {
 
 interface ExpenseChartsProps {
   expenses: Expense[];
-}
-
-function formatAmount(value: number): string {
-  return new Intl.NumberFormat("ko-KR").format(value);
 }
 
 function formatCompact(value: number): string {

@@ -22,28 +22,13 @@ import {
 } from "@/lib/budgets";
 import { CATEGORY_COLORS, EXPENSE_CATEGORIES, type ExpenseCategory } from "@/lib/categories";
 import { prefersNativeCameraCapture } from "@/lib/camera";
+import { readAssistantPayload } from "@/lib/chat-api";
 import { compressReceiptImage } from "@/lib/compress-image";
 import { currentMonthKey } from "@/lib/date-kst";
 import { fetchExpenses } from "@/lib/expenses";
+import { formatAmount, formatDateLabel, formatMonthLabel } from "@/lib/format";
 import { isAllowedReceiptType } from "@/lib/receipt-types";
 import type { ChatMessage, Expense } from "@/lib/types";
-
-function formatAmount(value: number): string {
-  return new Intl.NumberFormat("ko-KR").format(value);
-}
-
-function formatMonthLabel(month: string): string {
-  const [, monthPart] = month.split("-");
-  return `${Number(monthPart)}월`;
-}
-
-function formatDateLabel(isoDate: string): string {
-  const [year, month, day] = isoDate.split("-");
-  if (!year || !month || !day) {
-    return isoDate;
-  }
-  return `${year}.${month}.${day}`;
-}
 
 function createMessage(
   role: ChatMessage["role"],
@@ -193,39 +178,17 @@ export function ExpenseChat() {
         }),
       });
 
-      const payload: unknown = await response.json();
-      if (typeof payload !== "object" || payload === null) {
-        throw new Error("Gemini API 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
-      }
-
-      const data = payload as {
-        reply?: unknown;
-        expense?: Expense | null;
-        error?: unknown;
-      };
-
-      if (!response.ok) {
-        throw new Error(
-          typeof data.error === "string"
-            ? data.error
-            : "Gemini API 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
-        );
-      }
-
-      if (typeof data.reply !== "string") {
-        throw new Error(
-          typeof data.error === "string"
-            ? data.error
-            : "Gemini API 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
-        );
-      }
+      const data = await readAssistantPayload(
+        response,
+        "Gemini API 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+      );
 
       setMessages((current) => [
         ...current,
-        createMessage("assistant", data.reply as string),
+        createMessage("assistant", data.reply),
       ]);
 
-      if (data.expense && typeof data.expense === "object") {
+      if (data.expense) {
         applySavedExpense(data.expense);
       }
     } catch (error) {
@@ -286,39 +249,17 @@ export function ExpenseChat() {
         body,
       });
 
-      const payload: unknown = await response.json();
-      if (typeof payload !== "object" || payload === null) {
-        throw new Error("영수증을 읽지 못했습니다. 잠시 후 다시 시도해 주세요.");
-      }
-
-      const data = payload as {
-        reply?: unknown;
-        expense?: Expense | null;
-        error?: unknown;
-      };
-
-      if (!response.ok) {
-        throw new Error(
-          typeof data.error === "string"
-            ? data.error
-            : "영수증을 읽지 못했습니다. 잠시 후 다시 시도해 주세요.",
-        );
-      }
-
-      if (typeof data.reply !== "string") {
-        throw new Error(
-          typeof data.error === "string"
-            ? data.error
-            : "영수증을 읽지 못했습니다. 잠시 후 다시 시도해 주세요.",
-        );
-      }
+      const data = await readAssistantPayload(
+        response,
+        "영수증을 읽지 못했습니다. 잠시 후 다시 시도해 주세요.",
+      );
 
       setMessages((current) => [
         ...current,
-        createMessage("assistant", data.reply as string),
+        createMessage("assistant", data.reply),
       ]);
 
-      if (data.expense && typeof data.expense === "object") {
+      if (data.expense) {
         applySavedExpense(data.expense);
       }
     } catch (error) {

@@ -1,16 +1,13 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { formatAmount } from "@/lib/format";
 
 interface MonthBudgetProps {
   monthLabel: string;
   spent: number;
   budget: number | null;
   onSave: (amount: number) => Promise<void>;
-}
-
-function formatAmount(value: number): string {
-  return new Intl.NumberFormat("ko-KR").format(value);
 }
 
 export function MonthBudget({ monthLabel, spent, budget, onSave }: MonthBudgetProps) {

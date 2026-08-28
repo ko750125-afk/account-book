@@ -1,5 +1,5 @@
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { CATEGORY_PROMPT } from "@/lib/categories";
+import { isChatHistory, toGeminiHistory, type ChatTurn } from "@/lib/chat-history";
 import { classifyChatIntent } from "@/lib/chat-intent";
 import { getKstDateContext } from "@/lib/date-kst";
 import {
@@ -8,44 +8,12 @@ import {
   parseModelJson,
 } from "@/lib/expense-parse";
 import { createExpense, fetchExpenses } from "@/lib/expenses";
-import type { ChatMessage, Expense } from "@/lib/types";
+import { createGeminiJsonModel, missingGeminiKeyResponse } from "@/lib/gemini";
+import type { Expense } from "@/lib/types";
 
 interface ChatRequestBody {
   message?: unknown;
   history?: unknown;
-}
-
-function isChatHistory(
-  value: unknown,
-): value is Pick<ChatMessage, "role" | "text">[] {
-  if (!Array.isArray(value)) {
-    return false;
-  }
-
-  return value.every((item) => {
-    if (typeof item !== "object" || item === null) {
-      return false;
-    }
-    const row = item as Record<string, unknown>;
-    return (
-      (row.role === "user" || row.role === "assistant") &&
-      typeof row.text === "string"
-    );
-  });
-}
-
-function toGeminiHistory(
-  history: Pick<ChatMessage, "role" | "text">[],
-): { role: "user" | "model"; parts: { text: string }[] }[] {
-  const items = [...history];
-  while (items[0]?.role === "assistant") {
-    items.shift();
-  }
-
-  return items.map((item) => ({
-    role: item.role === "assistant" ? "model" : "user",
-    parts: [{ text: item.text }],
-  }));
 }
 
 function toAnalysisRows(expenses: Expense[]): {
@@ -65,13 +33,12 @@ function toAnalysisRows(expenses: Expense[]): {
 async function handleExpenseInput(
   apiKey: string,
   message: string,
-  history: Pick<ChatMessage, "role" | "text">[],
+  history: ChatTurn[],
 ): Promise<Response> {
   const dates = getKstDateContext();
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: "gemini-3.5-flash-lite",
-    systemInstruction: `당신은 한국어 가계부 비서입니다. 사용자의 자연어에서 지출을 추출합니다.
+  const model = createGeminiJsonModel(
+    apiKey,
+    `당신은 한국어 가계부 비서입니다. 사용자의 자연어에서 지출을 추출합니다.
 오늘 날짜는 ${dates.today} (YYYY-MM-DD)입니다.
 - "오늘"은 ${dates.today}
 - "어제"는 ${dates.yesterday}
@@ -85,28 +52,7 @@ ${CATEGORY_PROMPT}
 예: "금액이 얼마였는지 알려 주세요."
 
 반드시 JSON만 반환합니다.`,
-    generationConfig: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: SchemaType.OBJECT,
-        properties: {
-          reply: { type: SchemaType.STRING },
-          expense: {
-            type: SchemaType.OBJECT,
-            nullable: true,
-            properties: {
-              date: { type: SchemaType.STRING },
-              amount: { type: SchemaType.INTEGER },
-              description: { type: SchemaType.STRING },
-              category: { type: SchemaType.STRING },
-            },
-            required: ["date", "amount", "description", "category"],
-          },
-        },
-        required: ["reply"],
-      },
-    },
-  });
+  );
 
   const chat = model.startChat({
     history: toGeminiHistory(history),
@@ -135,14 +81,13 @@ ${CATEGORY_PROMPT}
 async function handleStatsQuestion(
   apiKey: string,
   message: string,
-  history: Pick<ChatMessage, "role" | "text">[],
+  history: ChatTurn[],
 ): Promise<Response> {
   const dates = getKstDateContext();
   const expenses = await fetchExpenses();
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: "gemini-3.5-flash-lite",
-    systemInstruction: `당신은 친근한 한국어 가계부 비서입니다. 저장된 지출 데이터만 보고 질문에 답합니다.
+  const model = createGeminiJsonModel(
+    apiKey,
+    `당신은 친근한 한국어 가계부 비서입니다. 저장된 지출 데이터만 보고 질문에 답합니다.
 오늘(KST)은 ${dates.today}입니다.
 - 어제: ${dates.yesterday}
 - 이번 달: ${dates.thisMonthStart} ~ ${dates.thisMonthEnd}
@@ -160,26 +105,7 @@ ${JSON.stringify(toAnalysisRows(expenses))}
 - 지출을 새로 저장하지 마세요.
 
 반드시 JSON만 반환합니다. expense는 항상 null입니다.`,
-    generationConfig: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: SchemaType.OBJECT,
-        properties: {
-          reply: { type: SchemaType.STRING },
-          expense: {
-            type: SchemaType.OBJECT,
-            nullable: true,
-            properties: {
-              date: { type: SchemaType.STRING },
-              amount: { type: SchemaType.INTEGER },
-              description: { type: SchemaType.STRING },
-            },
-          },
-        },
-        required: ["reply"],
-      },
-    },
-  });
+  );
 
   const chat = model.startChat({
     history: toGeminiHistory(history),
@@ -198,10 +124,7 @@ ${JSON.stringify(toAnalysisRows(expenses))}
 export async function POST(request: Request) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return Response.json(
-      { error: "Gemini API 키가 설정되지 않았습니다." },
-      { status: 500 },
-    );
+    return missingGeminiKeyResponse();
   }
 
   let body: ChatRequestBody;

@@ -1,6 +1,4 @@
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { CATEGORY_PROMPT } from "@/lib/categories";
-import { isAllowedReceiptType } from "@/lib/receipt-types";
 import { getKstDateContext } from "@/lib/date-kst";
 import {
   formatSavedReply,
@@ -8,6 +6,8 @@ import {
   parseReceiptExpense,
 } from "@/lib/expense-parse";
 import { createExpense } from "@/lib/expenses";
+import { createGeminiJsonModel, missingGeminiKeyResponse } from "@/lib/gemini";
+import { isAllowedReceiptType } from "@/lib/receipt-types";
 
 const MAX_BYTES = 4 * 1024 * 1024;
 
@@ -20,10 +20,7 @@ function toBase64(buffer: ArrayBuffer): string {
 export async function POST(request: Request) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return Response.json(
-      { error: "Gemini API 키가 설정되지 않았습니다." },
-      { status: 500 },
-    );
+    return missingGeminiKeyResponse();
   }
 
   let formData: FormData;
@@ -56,10 +53,9 @@ export async function POST(request: Request) {
 
   try {
     const base64 = toBase64(await file.arrayBuffer());
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-3.5-flash-lite",
-      systemInstruction: `당신은 영수증을 읽는 한국어 가계부 비서입니다.
+    const model = createGeminiJsonModel(
+      apiKey,
+      `당신은 영수증을 읽는 한국어 가계부 비서입니다.
 오늘 날짜는 ${dates.today} (YYYY-MM-DD)입니다.
 
 이미지에서 다음을 추출하세요.
@@ -71,28 +67,7 @@ ${CATEGORY_PROMPT}
 금액을 읽지 못하면 expense는 null로 두고, 다시 찍어 달라고 reply에 적습니다.
 
 반드시 JSON만 반환합니다.`,
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: SchemaType.OBJECT,
-          properties: {
-            reply: { type: SchemaType.STRING },
-            expense: {
-              type: SchemaType.OBJECT,
-              nullable: true,
-              properties: {
-                date: { type: SchemaType.STRING },
-                amount: { type: SchemaType.INTEGER },
-                description: { type: SchemaType.STRING },
-                category: { type: SchemaType.STRING },
-              },
-              required: ["date", "amount", "description", "category"],
-            },
-          },
-          required: ["reply"],
-        },
-      },
-    });
+    );
 
     const result = await model.generateContent([
       {

@@ -1,10 +1,10 @@
 import { resolveCategory } from "@/lib/categories";
+import { formatAmount } from "@/lib/format";
 import type { NewExpense } from "@/lib/types";
 
 export function formatSavedReply(expense: NewExpense): string {
   const [, month, day] = expense.date.split("-");
-  const amount = new Intl.NumberFormat("ko-KR").format(expense.amount);
-  return `${Number(month)}월 ${Number(day)}일 ${expense.category} · ${expense.description} ${amount}원을 저장했어요!`;
+  return `${Number(month)}월 ${Number(day)}일 ${expense.category} · ${expense.description} ${formatAmount(expense.amount)}원을 저장했어요!`;
 }
 
 export function parseExpense(value: unknown): NewExpense | null {
