@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import { toCategoryTotals, toMonthlyTotals } from "@/lib/expense-stats";
+import { CATEGORY_COLORS, isExpenseCategory } from "@/lib/categories";
 import type { Expense } from "@/lib/types";
 
 const PIE_COLORS = [
@@ -23,6 +24,13 @@ const PIE_COLORS = [
   "#ec4899",
   "#8a97a3",
 ];
+
+function pieColor(name: string, index: number): string {
+  if (isExpenseCategory(name)) {
+    return CATEGORY_COLORS[name];
+  }
+  return PIE_COLORS[index % PIE_COLORS.length];
+}
 
 interface ExpenseChartsProps {
   expenses: Expense[];
@@ -79,7 +87,7 @@ export function ExpenseCharts({ expenses }: ExpenseChartsProps) {
       </div>
 
       <div>
-        <h3 className="mb-2 text-[13px] font-semibold text-[#3c4a57]">항목별 비중</h3>
+        <h3 className="mb-2 text-[13px] font-semibold text-[#3c4a57]">카테고리별 비중</h3>
         <div className="flex items-center gap-2">
           <div className="h-40 min-w-0 flex-1">
             <ResponsiveContainer width="100%" height="100%">
@@ -97,7 +105,7 @@ export function ExpenseCharts({ expenses }: ExpenseChartsProps) {
                   {categories.map((entry, index) => (
                     <Cell
                       key={entry.name}
-                      fill={PIE_COLORS[index % PIE_COLORS.length]}
+                      fill={pieColor(entry.name, index)}
                     />
                   ))}
                 </Pie>
@@ -120,7 +128,7 @@ export function ExpenseCharts({ expenses }: ExpenseChartsProps) {
               <li key={entry.name} className="flex items-center gap-1.5 text-[12px] text-[#3c4a57]">
                 <span
                   className="h-2 w-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }}
+                  style={{ backgroundColor: pieColor(entry.name, index) }}
                 />
                 <span className="min-w-0 truncate">{entry.name}</span>
               </li>

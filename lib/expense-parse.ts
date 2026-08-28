@@ -1,9 +1,10 @@
+import { resolveCategory } from "@/lib/categories";
 import type { NewExpense } from "@/lib/types";
 
 export function formatSavedReply(expense: NewExpense): string {
   const [, month, day] = expense.date.split("-");
   const amount = new Intl.NumberFormat("ko-KR").format(expense.amount);
-  return `${Number(month)}월 ${Number(day)}일 ${expense.description} ${amount}원을 저장했어요!`;
+  return `${Number(month)}월 ${Number(day)}일 ${expense.category} · ${expense.description} ${amount}원을 저장했어요!`;
 }
 
 export function parseExpense(value: unknown): NewExpense | null {
@@ -30,7 +31,12 @@ export function parseExpense(value: unknown): NewExpense | null {
     return null;
   }
 
-  return { date, amount, description };
+  return {
+    date,
+    amount,
+    description,
+    category: resolveCategory(row.category, description),
+  };
 }
 
 export function parseReceiptExpense(
@@ -54,7 +60,12 @@ export function parseReceiptExpense(
     return null;
   }
 
-  return { date, amount, description };
+  return {
+    date,
+    amount,
+    description,
+    category: resolveCategory(row.category, description),
+  };
 }
 
 export function parseModelJson(text: string): {

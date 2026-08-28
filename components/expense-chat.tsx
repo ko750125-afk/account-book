@@ -20,6 +20,7 @@ import {
   monthSpent,
   saveMonthBudget,
 } from "@/lib/budgets";
+import { CATEGORY_COLORS, EXPENSE_CATEGORIES, type ExpenseCategory } from "@/lib/categories";
 import { prefersNativeCameraCapture } from "@/lib/camera";
 import { compressReceiptImage } from "@/lib/compress-image";
 import { currentMonthKey } from "@/lib/date-kst";
@@ -73,6 +74,7 @@ export function ExpenseChat() {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [budget, setBudget] = useState<number | null>(null);
   const [panel, setPanel] = useState<"list" | "chart">("list");
+  const [categoryFilter, setCategoryFilter] = useState<"전체" | ExpenseCategory>("전체");
   const [error, setError] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -131,14 +133,22 @@ export function ExpenseChat() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isSending]);
 
-  const totalAmount = useMemo(
-    () => expenses.reduce((sum, expense) => sum + expense.amount, 0),
-    [expenses],
-  );
-
   const spentThisMonth = useMemo(
     () => monthSpent(expenses, monthKey),
     [expenses, monthKey],
+  );
+
+  const visibleExpenses = useMemo(
+    () =>
+      categoryFilter === "전체"
+        ? expenses
+        : expenses.filter((expense) => expense.category === categoryFilter),
+    [categoryFilter, expenses],
+  );
+
+  const visibleTotal = useMemo(
+    () => visibleExpenses.reduce((sum, expense) => sum + expense.amount, 0),
+    [visibleExpenses],
   );
 
   function applySavedExpense(saved: Expense) {
@@ -425,11 +435,30 @@ export function ExpenseChat() {
           </div>
           <p className="flex items-baseline gap-0.5 text-[#e45b4c]">
             <span className="amount text-lg font-semibold leading-none">
-              {formatAmount(totalAmount)}
+              {formatAmount(visibleTotal)}
             </span>
             <span className="text-[12px] font-medium">원</span>
           </p>
         </div>
+
+        {expenses.length > 0 ? (
+          <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1">
+            {(["전체", ...EXPENSE_CATEGORIES] as const).map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setCategoryFilter(item)}
+                className={
+                  categoryFilter === item
+                    ? "h-8 shrink-0 rounded-full bg-[#191919] px-3 text-[12px] font-semibold text-white"
+                    : "h-8 shrink-0 rounded-full bg-[#eef2f6] px-3 text-[12px] font-medium text-[#3c4a57]"
+                }
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
         {isLoading ? (
           <p className="py-4 text-center text-[14px] text-[#8a97a3]">불러오는 중...</p>
@@ -438,10 +467,14 @@ export function ExpenseChat() {
             아직 기록된 지출이 없습니다.
           </p>
         ) : panel === "chart" ? (
-          <ExpenseCharts expenses={expenses} />
+          <ExpenseCharts expenses={visibleExpenses} />
+        ) : visibleExpenses.length === 0 ? (
+          <p className="py-4 text-center text-[14px] text-[#8a97a3]">
+            이 카테고리 지출이 없습니다.
+          </p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {expenses.map((expense) => (
+            {visibleExpenses.map((expense) => (
               <li
                 key={expense.id}
                 className="flex items-center justify-between gap-3 rounded-xl bg-[#f7f8fa] px-3 py-2.5"
@@ -450,8 +483,14 @@ export function ExpenseChat() {
                   <p className="truncate text-[15px] font-semibold text-[#222]">
                     {expense.description}
                   </p>
-                  <p className="mt-0.5 text-[12px] text-[#8a97a3]">
-                    {formatDateLabel(expense.date)}
+                  <p className="mt-0.5 flex items-center gap-1.5 text-[12px] text-[#8a97a3]">
+                    <span>{formatDateLabel(expense.date)}</span>
+                    <span
+                      className="font-medium"
+                      style={{ color: CATEGORY_COLORS[expense.category] }}
+                    >
+                      {expense.category}
+                    </span>
                   </p>
                 </div>
                 <p className="flex shrink-0 items-baseline gap-0.5 text-[#e45b4c]">

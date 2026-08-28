@@ -46,19 +46,11 @@ export function toCategoryTotals(expenses: Expense[]): CategoryTotal[] {
   const totals = new Map<string, number>();
 
   for (const expense of expenses) {
-    const name = expense.description.trim() || "기타";
+    const name = expense.category || "기타";
     totals.set(name, (totals.get(name) ?? 0) + expense.amount);
   }
 
-  const rows = [...totals.entries()]
+  return [...totals.entries()]
     .sort((left, right) => right[1] - left[1])
     .map(([name, amount]) => ({ name, amount }));
-
-  if (rows.length <= 6) {
-    return rows;
-  }
-
-  const top = rows.slice(0, 5);
-  const rest = rows.slice(5).reduce((sum, row) => sum + row.amount, 0);
-  return [...top, { name: "기타", amount: rest }];
 }

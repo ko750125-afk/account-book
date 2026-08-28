@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import { CATEGORY_PROMPT } from "@/lib/categories";
 import { isAllowedReceiptType } from "@/lib/receipt-types";
 import { getKstDateContext } from "@/lib/date-kst";
 import {
@@ -65,6 +66,7 @@ export async function POST(request: Request) {
 - date: 영수증 날짜. YYYY-MM-DD. 연도가 없으면 올해로 보완. 날짜가 전혀 없으면 ${dates.today}
 - amount: 결제 총액(합계, 받을금액, 결제금액). 개별 품목 합이 아니라 최종 지불 금액. 원 단위 정수
 - description: 가게 이름. 짧고 명확하게. 없으면 "영수증"
+${CATEGORY_PROMPT}
 
 금액을 읽지 못하면 expense는 null로 두고, 다시 찍어 달라고 reply에 적습니다.
 
@@ -82,8 +84,9 @@ export async function POST(request: Request) {
                 date: { type: SchemaType.STRING },
                 amount: { type: SchemaType.INTEGER },
                 description: { type: SchemaType.STRING },
+                category: { type: SchemaType.STRING },
               },
-              required: ["date", "amount", "description"],
+              required: ["date", "amount", "description", "category"],
             },
           },
           required: ["reply"],
@@ -98,7 +101,7 @@ export async function POST(request: Request) {
           data: base64,
         },
       },
-      "이 영수증에서 결제 총액, 날짜, 가게 이름을 추출하세요.",
+      "이 영수증에서 결제 총액, 날짜, 가게 이름, 카테고리를 추출하세요.",
     ]);
 
     const parsed = parseModelJson(result.response.text());

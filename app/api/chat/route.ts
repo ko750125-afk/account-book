@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import { CATEGORY_PROMPT } from "@/lib/categories";
 import { classifyChatIntent } from "@/lib/chat-intent";
 import { getKstDateContext } from "@/lib/date-kst";
 import {
@@ -51,11 +52,13 @@ function toAnalysisRows(expenses: Expense[]): {
   date: string;
   amount: number;
   description: string;
+  category: string;
 }[] {
   return expenses.map((expense) => ({
     date: expense.date,
     amount: expense.amount,
     description: expense.description,
+    category: expense.category,
   }));
 }
 
@@ -75,8 +78,9 @@ async function handleExpenseInput(
 - 날짜가 없으면 오늘
 - 금액은 원 단위 정수. "2만 원"은 20000
 - 내용(description)은 짧은 명사. 예: 택시, 점심
+${CATEGORY_PROMPT}
 
-정보가 충분하면 expense에 { date, amount, description }를 넣고 reply는 짧게 둡니다.
+정보가 충분하면 expense에 { date, amount, description, category }를 넣고 reply는 짧게 둡니다.
 날짜나 금액을 모르면 expense는 null로 두고, 다시 물어보는 한국어 질문을 reply에 넣습니다.
 예: "금액이 얼마였는지 알려 주세요."
 
@@ -94,8 +98,9 @@ async function handleExpenseInput(
               date: { type: SchemaType.STRING },
               amount: { type: SchemaType.INTEGER },
               description: { type: SchemaType.STRING },
+              category: { type: SchemaType.STRING },
             },
-            required: ["date", "amount", "description"],
+            required: ["date", "amount", "description", "category"],
           },
         },
         required: ["reply"],
@@ -150,7 +155,7 @@ ${JSON.stringify(toAnalysisRows(expenses))}
 - 이 데이터에 없는 지출은 지어내지 마세요.
 - 금액은 원 단위로 보기 쉽게 말해 주세요. 예: 20,000원
 - 답이 없으면 없다고 편하게 말해 주세요.
-- 식비는 점심, 저녁, 아침, 커피, 분식, 식당, 배달 같은 음식 관련 항목으로 묶어 주세요.
+- 식비/학원비/장보기/교통비/쇼핑/기타 카테고리가 있으면 그 값을 우선 사용하세요.
 - 말투는 자연스럽고 친근하게, 2~4문장 안으로.
 - 지출을 새로 저장하지 마세요.
 
